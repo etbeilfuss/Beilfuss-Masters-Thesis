@@ -1,0 +1,590 @@
+---
+title: "Thesis Code"
+author: "Ethan Beilfuss"
+date: "2023-12-18"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# library(readr)
+# library(dplyr)
+# library(tidyverse)
+# library(tidyr)
+# library(roxygen2)
+```
+
+```{r}
+## Net Growth and Net Removal Tables from FIA EVALIDator API.
+# Sawlog Net Growth Table
+NG_Sawlog <- read.csv("NG_Saw.csv")
+# Sawlog Net Removal Table
+NR_Sawlog <- read.csv("NR_Saw.csv")
+
+# Growing Stock Net Growth Table
+NG_GS <- read.csv("NG_GS.csv")
+# Growing Stock Net Removal Table
+NR_GS <- read.csv("NR_GS.csv")
+
+# Above Sawlog Volume Net Growth Table
+NG_AS <- read.csv("NG_AS.csv")
+# Above Sawlog Volume Net Removal Table
+NR_AS <- read.csv("NR_AS.csv")
+```
+
+```{r}
+## Initializing Species lists
+# All species present in EVALIDAtor FIA Data for Wisconsin, 2021.
+species_raw <- c("American basswood", "American beech", "American elm", "balsam fir", "balsam poplar", "bigtooth aspen", "bitternut hickory", "black ash", "black cherry", "black locust", "black maple", "black oak", "black spruce", "black walnut", "black willow", "blue spruce", "boxelder", "bur oak", "butternut", "chinkapin oak", "eastern cottonwood", "eastern hemlock", "eastern redcedar", "eastern white pine", "green ash", "hackberry", "honeylocust", "jack pine", "northern pin oak", "northern red oak", "northern white-cedar", "Norway maple", "Norway spruce", "paper birch", "quaking aspen", "red maple", "red pine", "river birch", "rock elm", "Scotch pine", "shagbark hickory", "Siberian elm", "silver maple", "slippery elm", "sugar maple", "swamp white oak", "tamarack (native)", "white ash", "white mulberry", "white oak", "white spruce", "yellow birch")
+
+# Final list of species that were aggregated from the species_raw list.
+species_aggregated <- c("Ash", "Aspen", "BalsamFir", "Basswood", "Beech", "Birch", "Blocust", "Boxelder", "Butternut", "Bwalnut", "Cedar", "Cherry", "Elm", "Hackberry", "HardMaple", "Hemlock", "Hickory", "Honeylocust", "JackPine", "OtherPine", "RedOak", "RedPine", "SoftMaple", "Spruce", "Tamarack", "WhiteMulberry", "WhiteOak", "WhitePine", "Willow")
+
+# Select Species to keep from species_aggregated
+species_to_keep <- c("BalsamFir", "WhitePine","Basswood","RedOak","WhiteOak","Blocust","Boxelder","Tamarack")
+
+# Species Alias's that will be joined in with the final table.
+SpeciesAlias <- c("Ash - Fraxinus spp.", "Aspen - Populus spp.", "Balsam Fir - Abies balsamea", "Basswood - Tilia americana", "Beech - Fagus americana", "Birch - Betula spp.", "Black Locust - Robinia pseudoacacia", "Black Walnut - Juglans nigra", "Boxelder - Acer negundo", "Butternut - Juglans cinerea", "Cedar - Juniperus and Thuja spp.", "Black Cherry - Prunus serotina", "Elm - Ulmus spp.", "Hard Maple - Acer saccharum", "Hemlock - Tsuga canadensis", "Hickory - Carya spp.", "Jack Pine - Pinus banksiana", "Other Pine - Pinus spp.", "Red Oak - Quercus, Section Lobatae", "Red Pine - Pinus resinosa", "Soft Maple - Acer spp.", "Spruce - Picea spp.", "Tamarack - Larix spp.", "White Oak - Quercus, Section Lepidobalanus", "White Pine - Pinus strobus", "Willow - Salix spp.")
+```
+
+```{r}
+EVALIDator_Cleaning <- function(csv, desired_species, Growth = TRUE){
+  
+  #' This function creates a table that outputs clean data focused on growth or removals.
+  #' @param csv A csv file has species as a row variable and county code and name as a row variable
+  #' @param desired_species A character vector containing the species you want to keep in your final analysis. It is best to store this value as an object: ex: desired_species <- c("Ash", "Aspen", "BalsamFir", ...)
+  #' @param Growth determines whether to output Total Growth or Total Removal Columns. Default is TRUE.
+  #' True outputs: Growth
+  #' False outputs: Removal
+  
+  # Removes Total rows
+  csv <- csv[!apply(csv, 1, function(row) any(row == "Total")), ]
+  csv <- subset(csv, INVENTORY_YEAR >= 2017)
+  # Drops the first 9 characters (5 digit zip code and state abbreviation) from COUNTY_CODE_AND_NAME to leave only the County Name
+  csv$COUNTY_CODE_AND_NAME <- substring(csv$COUNTY_CODE_AND_NAME, 10)
+  # Changes "St." to Saint
+  csv$county_nam<- gsub("St\\.", "Saint", csv$COUNTY_CODE_AND_NAME)
+  # Drops COUNTY_CODE_AND_NAME column.
+  csv <- select(csv, -COUNTY_CODE_AND_NAME)
+  csv$SPECIES <- str_extract(csv$SPECIES, "(?<=-\\s)[^\\(]+")
+  csv$SPECIES <- substr(csv$SPECIES, 1, nchar(csv$SPECIES) -1)
+  # Reorders the csv 
+  x <- csv[order(csv$county_nam, csv$SPECIES),]
+  
+  # Renaming and grouping species
+    for (ii in 1:nrow(x)){
+      if (x[ii, "SPECIES"] == "American basswood"){
+        x[ii, "SPECIES"] <- "Basswood"
+      } else if (x[ii, "SPECIES"] == "American beech"){
+        x[ii, "SPECIES"] <- "Beech"
+      } else if (x[ii, "SPECIES"] == "American elm"){
+        x[ii, "SPECIES"] <- "Elm"
+      } else if (x[ii, "SPECIES"] == "balsam fir"){
+        x[ii, "SPECIES"] <- "BalsamFir"
+      } else if (x[ii, "SPECIES"] == "balsam poplar"){
+        x[ii, "SPECIES"] <- "Aspen"
+      } else if (x[ii, "SPECIES"] == "bigtooth aspen"){
+        x[ii, "SPECIES"] <- "Aspen"
+      } else if (x[ii, "SPECIES"] == "bitternut hickory"){
+        x[ii, "SPECIES"] <- "Hickory"
+      } else if (x[ii, "SPECIES"] == "black ash"){
+        x[ii, "SPECIES"] <- "Ash"
+      } else if (x[ii, "SPECIES"] == "black cherry"){
+        x[ii, "SPECIES"] <- "Cherry"
+      } else if (x[ii, "SPECIES"] == "black locust"){
+        x[ii, "SPECIES"] <- "Blocust"
+      } else if (x[ii, "SPECIES"] == "black maple"){
+        x[ii, "SPECIES"] <- "HardMaple"
+      } else if (x[ii, "SPECIES"] == "black oak"){
+        x[ii, "SPECIES"] <- "RedOak"
+      } else if (x[ii, "SPECIES"] == "black spruce"){
+        x[ii, "SPECIES"] <- "Spruce"
+      } else if (x[ii, "SPECIES"] == "black walnut"){
+        x[ii, "SPECIES"] <- "Bwalnut"
+      } else if (x[ii, "SPECIES"] == "black willow"){
+        x[ii, "SPECIES"] <- "Willow"
+      } else if (x[ii, "SPECIES"] == "blue spruce"){
+        x[ii, "SPECIES"] <- "Spruce"
+      } else if (x[ii, "SPECIES"] == "boxelder"){
+        x[ii, "SPECIES"] <- "Boxelder"
+      } else if (x[ii, "SPECIES"] == "bur oak"){
+        x[ii, "SPECIES"] <- "WhiteOak"
+      } else if (x[ii, "SPECIES"] == "butternut"){
+        x[ii, "SPECIES"] <- "Butternut"
+      } else if (x[ii, "SPECIES"] == "chinkapin oak"){
+        x[ii, "SPECIES"] <- "WhiteOak"
+      } else if (x[ii, "SPECIES"] == "eastern cottonwood"){
+        x[ii, "SPECIES"] <- "Aspen"
+      } else if (x[ii, "SPECIES"] == "eastern hemlock"){
+        x[ii, "SPECIES"] <- "Hemlock"
+      } else if (x[ii, "SPECIES"] == "eastern redcedar"){
+        x[ii, "SPECIES"] <- "Cedar"
+      } else if (x[ii, "SPECIES"] == "eastern white pine"){
+        x[ii, "SPECIES"] <- "WhitePine"
+      } else if (x[ii, "SPECIES"] == "green ash"){
+        x[ii, "SPECIES"] <- "Ash"
+      } else if (x[ii, "SPECIES"] == "hackberry"){
+        x[ii, "SPECIES"] <- "Hackberry"
+      } else if (x[ii, "SPECIES"] == "honeylocust"){
+        x[ii, "SPECIES"] <- "Honeylocust"
+      } else if (x[ii, "SPECIES"] == "jack pine"){
+        x[ii, "SPECIES"] <- "JackPine"
+      } else if (x[ii, "SPECIES"] == "northern pin oak"){
+        x[ii, "SPECIES"] <- "RedOak"
+      } else if (x[ii, "SPECIES"] == "northern red oak"){
+        x[ii, "SPECIES"] <- "RedOak"
+      } else if (x[ii, "SPECIES"] == "northern white-cedar"){
+        x[ii, "SPECIES"] <- "Cedar"
+      } else if (x[ii, "SPECIES"] == "Norway maple"){
+        x[ii, "SPECIES"] <- "SoftMaple"
+      } else if (x[ii, "SPECIES"] == "Norway spruce"){
+        x[ii, "SPECIES"] <- "Spruce"
+      } else if (x[ii, "SPECIES"] == "paper birch"){
+        x[ii, "SPECIES"] <- "Birch"
+      } else if (x[ii, "SPECIES"] == "quaking aspen"){
+        x[ii, "SPECIES"] <- "Aspen"
+      } else if (x[ii, "SPECIES"] == "red maple"){
+        x[ii, "SPECIES"] <- "SoftMaple"
+      } else if (x[ii, "SPECIES"] == "red mulberry"){
+        x[ii, "SPECIES"] <- "RedMulberry"
+      } else if (x[ii, "SPECIES"] == "red pine"){
+        x[ii, "SPECIES"] <- "RedPine"
+      } else if (x[ii, "SPECIES"] == "river birch"){
+        x[ii, "SPECIES"] <- "Birch"
+      } else if (x[ii, "SPECIES"] == "rock elm"){
+        x[ii, "SPECIES"] <- "Elm"
+      } else if (x[ii, "SPECIES"] == "Scotch pine"){
+        x[ii, "SPECIES"] <- "OtherPine"
+      } else if (x[ii, "SPECIES"] == "shagbark hickory"){
+        x[ii, "SPECIES"] <- "Hickory"
+      } else if (x[ii, "SPECIES"] == "Siberian elm"){
+        x[ii, "SPECIES"] <- "Elm"
+      } else if (x[ii, "SPECIES"] == "silver maple"){
+        x[ii, "SPECIES"] <- "SoftMaple"
+      } else if (x[ii, "SPECIES"] == "silver poplar"){
+        x[ii, "SPECIES"] <- "Aspen"
+      } else if (x[ii, "SPECIES"] == "slippery elm"){
+        x[ii, "SPECIES"] <- "Elm"
+      } else if (x[ii, "SPECIES"] == "sugar maple"){
+        x[ii, "SPECIES"] <- "HardMaple"
+      } else if (x[ii, "SPECIES"] == "swamp white oak"){
+        x[ii, "SPECIES"] <- "WhiteOak"
+      } else if (x[ii, "SPECIES"] == "tamarack (native)"){
+        x[ii, "SPECIES"] <- "Tamarack"
+      } else if (x[ii, "SPECIES"] == "white ash"){
+        x[ii, "SPECIES"] <- "Ash"
+      } else if (x[ii, "SPECIES"] == "white mulberry"){
+        x[ii, "SPECIES"] <- "WhiteMulberry"
+      } else if (x[ii, "SPECIES"] == "white oak"){
+        x[ii, "SPECIES"] <- "WhiteOak"
+      } else if (x[ii, "SPECIES"] == "white spruce"){
+        x[ii, "SPECIES"] <- "Spruce"
+      } else if (x[ii, "SPECIES"] == "yellow birch"){
+        x[ii, "SPECIES"] <- "Birch"
+      }
+    }
+  # cleans the input csv and outputs the same csv with only the desired species.
+  # Filter rows that contain any of the desired species
+  filtered_csv <- x %>% 
+    filter_all(any_vars(. %in% desired_species))
+  
+  # Sum the values by grouping SPECIES and county_nam together.
+  grouped_by <- filtered_csv %>% 
+    group_by(county_nam, SPECIES)
+    # sums the estimate column based on groupings
+    sum_by_species <- grouped_by %>% summarize(ESTIMATE = sum(ESTIMATE)) %>%
+    # renames the SPECIES column to Species
+    rename(Species = SPECIES) %>% 
+    # conforms the estimate column to be mCF
+    mutate(ESTIMATE = round(ESTIMATE / 1000, 2))
+  
+  # Creates a specific identifier for every county/species combination
+  county_spp <- sum_by_species %>% 
+    unite("county_spp", county_nam, Species, sep = "_", remove = FALSE)
+  if (Growth == TRUE) {
+    names(county_spp)[names(county_spp) == "ESTIMATE"] <- "Growth_mCF"
+  } else if (Growth == FALSE) {
+    names(county_spp)[names(county_spp) == "ESTIMATE"] <- "Removals_mCF"
+  }
+return(county_spp)
+}
+```
+
+```{r}
+# 
+Log_Sorting_GR <- function(Growing_Table,Above_Table, Growth = TRUE, Log_Sort){
+  #' @param Growing_Table Growing-Stock table output from EVALIDator_Cleaning for Net Growth or Net Removals
+  #' @param Above_Table  Above Sawlog table output from EVALIDator_Cleaning for Net Growth or Net Removals
+  #' @param Growth determines whether to output Total Growth or Total Removal Columns. Default is TRUE.
+  #' True outputs: Growth
+  #' False outputs: Removal
+  #' @param Log_Sort Which log sort volume are you trying to calculate? Options are Pulp and Bolt
+  
+  # Ratios to live within the function
+  growing_ratios <- read.table(text = "Species    Pulp_Ratio    Bolt_Ratio
+    BalsamFir      0.747967    0.252033
+    Basswood        0.680865    0.319135
+    Blocust    0.661827    0.338173
+    Boxelder        0.666106    0.333894
+    RedOak         0.700441    0.299559
+    Tamarack        0.768209    0.231791
+    WhiteOak       0.702588    0.297412
+    WhitePine      0.726645    0.273355", header = TRUE)
+  above_ratios <-read.table(text = "Species    Pulp_Ratio    Bolt_Ratio
+    BalsamFir      0.209986    0.790014
+    Basswood        0.269335    0.730665
+    Blocust    0.263925    0.736075
+    Boxelder        0.276998    0.723002
+    RedOak         0.284904    0.715096
+    Tamarack        0.150257    0.849743
+    WhiteOak       0.296695    0.703305
+    WhitePine      0.249306    0.750694", header = TRUE)
+  # Calculating Growth Volumes
+  if (Growth == TRUE){
+    ## Growing Stock
+    # merging Growing_Table with growing_ratios matching by "Species"
+    GS_merged <- merge(Growing_Table, growing_ratios, by = "Species")
+    # calculating pulp volume from Growing_Table by multiplying Growth_mCF by pulp ratio
+    GS_pulp <- mutate(GS_merged, g.pulp_vol = Growth_mCF * Pulp_Ratio)
+    # Calculating bolt volume from Growing_Tablg by multiplying Growth_mCF by bolt ratio
+    GS_pulp_bolt <- mutate(GS_pulp, g.bolt_vol = Growth_mCF * Bolt_Ratio)
+    
+    # Above Sawlog
+    # merging Above_Table with above_ratios matching by "Species"
+    AS_merged <- merge(Above_Table, above_ratios, by = "Species")
+    # Calculating pulp volume from Above_Table by multiplying Growth_mCF by pulp ratio
+    AS_pulp <- mutate(AS_merged, a.pulp_vol = Growth_mCF * Pulp_Ratio)
+    # Calculating bolt volume from Above_Table by multiplying Growth_mCF by bolt ratio
+    AS_pulp_bolt <- mutate(AS_pulp, a.bolt_vol = Growth_mCF * Bolt_Ratio)
+    
+    # merge Growing_Table and Above_Table together by county and species
+    pulp_bolt_growth <- merge(GS_pulp_bolt, AS_pulp_bolt, by = "county_spp")
+    if (Log_Sort == "Pulp"){
+      # Pulpwood Table Creation
+      NG_Pulp <- pulp_bolt_growth %>%
+        # Adding together pulp volumes
+        mutate(Growth_mCF = g.pulp_vol + a.pulp_vol) %>%
+        # Dropping Unnecessary Columns
+        select(county_spp, county_nam.x, Species.x, Growth_mCF) %>% 
+        # Renaming the Columns
+        rename(county_nam = county_nam.x, Species = Species.x)
+      return(NG_Pulp)
+    }
+    if (Log_Sort == "Bolt"){
+      # Bolt Table Creation
+      NG_Bolt <- pulp_bolt_growth %>%
+        # Adding Bolt Volumes
+        mutate(Growth_mCF = g.bolt_vol + a.bolt_vol) %>%
+        # Drop Unnecessary Columns
+        select(county_spp, county_nam.x, Species.x, Growth_mCF) %>%
+        # Rename Columns
+        rename(county_nam = county_nam.x, Species = Species.x)
+      return(NG_Bolt)
+    }
+    # Calculating Removal Volumes
+  }else if(Growth == FALSE){
+    ## Growing Stock
+    # merging Growing_Table with growing_ratios matching by "Species"
+    GS_merged <- merge(Growing_Table, growing_ratios, by = "Species")
+    # calculating pulp volume from Growing_Table by multiplying Growth_mCF by pulp ratio
+    GS_pulp <- mutate(GS_merged, g.pulp_vol = Removals_mCF * Pulp_Ratio)
+    # Calculating bolt volume from Growing_Tablg by multiplying Growth_mCF by bolt ratio
+    GS_pulp_bolt <- mutate(GS_pulp, g.bolt_vol = Removals_mCF * Bolt_Ratio)
+    
+    # Above Sawlog
+    # merging Above_Table with above_ratios matching by "Species"
+    AS_merged <- merge(Above_Table, above_ratios, by = "Species")
+    # Calculating pulp volume from Above_Table by multiplying Growth_mCF by pulp ratio
+    AS_pulp <- mutate(AS_merged, a.pulp_vol = Removals_mCF * Pulp_Ratio)
+    # Calculating bolt volume from Above_Table by multiplying Growth_mCF by bolt ratio
+    AS_pulp_bolt <- mutate(AS_pulp, a.bolt_vol = Removals_mCF * Bolt_Ratio)
+
+    # merge Growing_Table and Above_Table together by county and species
+    pulp_bolt_growth <- merge(GS_pulp_bolt, AS_pulp_bolt, by = "county_spp")
+    if (Log_Sort == "Pulp"){
+      # Pulp Removal Table Creation
+      NR_Pulp <- pulp_bolt_growth %>%
+        # Adding Pulp Volumes
+        mutate(Removals_mCF = g.pulp_vol + a.pulp_vol) %>%
+        # Drop Unnecessary Columns
+        select(county_spp, county_nam.x, Species.x, Removals_mCF) %>% 
+        # Rename Columns
+        rename(county_nam = county_nam.x, Species = Species.x)
+      return(NR_Pulp)
+    }
+    if (Log_Sort == "Bolt"){
+      # Bolt Removal Table Creation
+      NR_Bolt <- pulp_bolt_growth %>%
+        # Adding Bolt Volumes
+        mutate(Removals_mCF = g.bolt_vol + a.bolt_vol) %>%
+        # Drop Unnecessary Columns
+        select(county_spp, county_nam.x, Species.x, Removals_mCF) %>% 
+        # Rename Columns
+        rename(county_nam = county_nam.x, Species = Species.x)
+      return(NR_Bolt)
+  }
+  }
+}
+```
+
+```{r}
+growth_statistics <- function(net_growth_table, net_removal_table, table, stats_to_run){
+ #' @param net_growth_table output from EVALIDator_inator where Growth = TRUE for x product sort.
+ #' @param net_removal_table output from EVALIDator_inator where Growth = FALSE for x product sort.
+ #' @param table choose whether to output the Attribute Table or the Atlas table.
+ #'   table = Attribute
+ #'   table = Atlas
+ #' @param stat_to_run a parameter that selects which statistics you want to return.
+ #'   stat_to_run = TotalGrowth
+ #'     Calculates Total Growth for the two tables. 
+ #'   stat_to_run = GrowthRemoval
+ #'     Calculates the Growth to Removal Ratio.
+ #' 
+ #' Returns
+ #'   This function can return up to four different tables. They are Attribute and Atlas tables for both Total Growth and Growth:Removals.
+ #'  
+ #' 
+
+  # Used to create a column for matching and symbolizing species names in QGIS
+  SpeciesAlias <- c("Ash" = "Ash - Fraxinus spp.","Aspen" = "Aspen - Populus spp.", "BalsamFir" = "Balsam Fir - Abies balsamea","Basswood" = "Basswood - Tilia americana", "Beech" = "Beech - Fagus americana", "Birch" = "Birch - Betula spp.", "Blocust" = "Black Locust - Robinia pseudoacacia", "Bwalnut" = "Black Walnut - Juglans nigra", "Boxelder" = "Boxelder - Acer negundo", "Butternut" = "Butternut - Juglans cinerea", "Cedar" = "Cedar - Juniperus and Thuja spp.", "Cherry" = "Black Cherry - Prunus serotina", "Elm" = "Elm - Ulmus spp.", "HardMaple" = "Hard Maple - Acer saccharum", "Hemlock" = "Hemlock - Tsuga canadensis", "Hickory" = "Hickory - Carya spp.", "JackPine" = "Jack Pine - Pinus banksiana", "OtherPine" = "Other Pine - Pinus spp.", "RedOak" = "Red Oak - Quercus, Section Lobatae", "RedPine" = "Red Pine - Pinus resinosa", "SoftMaple" = "Soft Maple - Acer spp.", "Spruce" = "Spruce - Picea spp.","Tamarack" = "Tamarack - Larix spp.","WhiteOak" = "White Oak - Quercus, Section Lepidobalanus","WhitePine" = "White Pine - Pinus strobus","Willow" = "Willow - Salix spp.")
+
+  # Joins the two tables together.
+  joined <- full_join(net_growth_table, net_removal_table,by = "county_spp")
+  
+  # Adds in necessary 0 values to ensure NA (NaN equivalents) don't mess up the data. Not having this leads to values not being calculated if there is an NA in the "formula" being calculated.
+  joined$Growth_mCF[is.na(joined$Growth_mCF)] <- 0
+  joined$Removals_mCF[is.na(joined$Removals_mCF)] <- 0
+  
+  # Creates Total Growth and Growth to Removal Values for each Species in each County.
+  stats <- 
+    joined %>% 
+    # Creates a new column TotalGrowth by subtracting the joined columns that are linked by the county_spp column. 
+    mutate("TotalGrowth" = (joined$Growth_mCF - joined$Removals_mCF)) %>% 
+    # Creates a new column GR_Ratio by dividing Growth and Removal columns to get GR Ratios for each species in each county. IS NOT SUMMED. This is the final bit of math for this data. The remainder below only transposes the data through pivoting.
+    mutate("GR_Ratio" = (joined$Growth_mCF/joined$Removals_mCF)) %>%
+    # Ensures the following columns are carried forward, does nothing mathematical.
+    group_by(Species.x, TotalGrowth, GR_Ratio) %>%
+    # Formatting
+    summarize(county_nam.x) %>%
+    # Formatting
+    arrange(county_nam.x)
+  
+  # Calculates the Attribute Table
+  if (table == "Attribute"){
+  # Return this to be used for the Total Growth Attribute Table
+      if (stats_to_run == "TotalGrowth") {
+        # Stores the modified stats data as TG_Att
+        TG_Att <- stats %>%
+          # Moves species to column headers, county_nam to the first row, and fills the values throughout the table
+          pivot_wider(names_from = Species.x, values_from = TotalGrowth) %>% 
+          # Drops GrowthRemoval Column, not needed for Total Growth
+          subset(select = -GR_Ratio) %>%
+          group_by(county_nam.x) %>%
+          # Collapses the multiple county_nam row entries into one entry. Otherwise it would cascade with each county_nam and species being a new row with all other species being NA.
+          summarise(across(everything(), sum, na.rm = TRUE))
+        # Replaces values of 0 with NA
+        TG_Att[TG_Att == 0] <- NA
+        # Renaming the output
+        TG_Attribute <- TG_Att
+        # Renaming Columns
+        names(TG_Attribute)[names(TG_Attribute)== "county_nam.x"] <- "county_nam"
+          return(TG_Attribute)
+    
+      # Return this to be used for the Growth:Removal Attribute Table
+      } else if (stats_to_run == "GrowthRemoval") {
+        GR_Att <- stats %>%
+          # Moves species to column headers, county_nam to the first row, and fills the values throughout the table
+          pivot_wider(names_from = Species.x, values_from = GR_Ratio) %>%
+          # Drops TotalGrowth Column, not needed for Growth Removal
+          subset(select = -TotalGrowth) %>%
+          group_by(county_nam.x) %>%
+          # Collapses the multiple county row entries into one entry. Otherwise it would cascade with each county_nam and species being a new row with all other species being NA.
+          summarise(across(everything(), sum, na.rm = TRUE)) %>% 
+          # Removes out of bounds variables that are negative or positive infinity
+          mutate(across(everything(), ~ replace(., is.infinite(.), NA)))
+          # Replaces values of 0 with NA
+          GR_Att[GR_Att == 0] <- NA
+          # Renaming output
+          GR_Attribute <- GR_Att
+          # Renaming columns
+          names(GR_Attribute)[names(GR_Attribute)== "county_nam.x"] <- "county_nam"
+            return(GR_Attribute)
+      }
+
+  # Calculates the Atlas Table    
+  }else if (table == "Atlas"){
+  # Returns the Atlas Table for Total Growth
+    if (stats_to_run == "TotalGrowth") {
+      TG_Atl <- 
+        stats %>%
+        # Moves species to column headers, county_nam to the first row, and fills the values throughout the table
+        pivot_wider(names_from = county_nam.x, values_from = TotalGrowth) %>% 
+        subset(select = -GR_Ratio) %>%
+        # Collapses the multiple county_nam row entries into one entry. Otherwise it would cascade with each county_nam and species being a new row with all other species being NA.
+        group_by(Species.x) %>%
+        summarise(across(everything(), sum, na.rm = TRUE))
+      # Adding TotalGrowth Column and summing across rows to get the total growth value for each species.
+      TG_Atl$TotalGrowth <- rowSums(TG_Atl[, 2:73])
+      # Adding the SpeciesAlias Column
+      TG_Atl$SpeciesAlias <- ifelse(TG_Atl$Species.x %in% names(SpeciesAlias),
+                                SpeciesAlias[TG_Atl$Species.x],
+                                "Unknown Species")
+      # Removing unnecessary columns
+      TG_Atl <- TG_Atl[, -c(2:73)]
+      # Changing the names
+      names(TG_Atl)[names(TG_Atl)== "Species.x"] <- "Species"
+      # Reordering columns
+      TG_Atlas <- TG_Atl[c("Species", "SpeciesAlias", "TotalGrowth")]
+      # Replacing 0 values with NA
+      TG_Atlas$TotalGrowth <- ifelse(TG_Atlas$TotalGrowth == 0, NA, TG_Atlas$TotalGrowth)
+        return(TG_Atlas)
+      
+    } else if (stats_to_run == "GrowthRemoval") {
+      # Returns the Atlas Table for Growth Removal
+      # Calculates a summed total growth for all species.
+      TotalGrowth <- 
+        joined %>%
+        # Sums Growth_mCF by Species regardless of county name. This is a sum operation. We do not need county name in the Atlas.
+        aggregate(Growth_mCF ~ Species.x, FUN = sum)
+      # Calculates a summed total removal for all species
+      TotalRemovals <-
+        joined %>%
+        # Sums Removals_mCF by Species regardless of county name. This is a sum operation. We do not need county name in the Atlas.
+        aggregate(Removals_mCF ~ Species.x, FUN = sum)
+      # Joins the two previous df together on Species.x
+      GR_Atlas_stats <- full_join(TotalGrowth, TotalRemovals, by = "Species.x")
+      # Creates a new column, GR_Ratio, which is a ratio of the entire dataset by species.
+      GR_Atlas_stats$GR_Ratio <- round(GR_Atlas_stats$Growth_mCF / GR_Atlas_stats$Removals_mCF, digits = 4)
+      # Removes unnecessary columns
+      GR_Atlas_stats <- GR_Atlas_stats[, -c(2:3)]
+      # Adding the SpeciesAlias Column, if a species is not present in the SpeciesAlias it returns "Unknown Species"
+      GR_Atlas_stats$SpeciesAlias <- ifelse(GR_Atlas_stats$Species.x %in% names(SpeciesAlias),
+                                SpeciesAlias[GR_Atlas_stats$Species.x],
+                                "Unknown Species")
+      # Changing the name of Species.x to Species
+      names(GR_Atlas_stats)[names(GR_Atlas_stats)== "Species.x"] <- "Species"
+      # Reordering columns
+      GR_Atlas <- GR_Atlas_stats[c("Species", "SpeciesAlias", "GR_Ratio")]  
+        return(GR_Atlas)
+      }   
+  }
+}
+```
+
+```{r}
+## Growing Stock Tree Volumes
+# Growing Stock Net Growth
+NG_GS_eval <- EVALIDator_Cleaning(NG_GS, species_to_keep, Growth = TRUE)
+# Growing Stock Net Removal
+NR_GS_eval <- EVALIDator_Cleaning(NR_GS, species_to_keep, Growth = FALSE)
+
+# 
+Growing_Stock_GR_Atlas <- growth_statistics(NG_GS_eval, NR_GS_eval, "Atlas", "GrowthRemoval")
+# 
+Growing_Stock_GR_Attribute <- growth_statistics(NG_GS_eval, NR_GS_eval, "Attribute", "GrowthRemoval")
+# 
+Growing_Stock_TG_Atlas <- growth_statistics(NG_GS_eval, NR_GS_eval, "Atlas", "TotalGrowth")
+# 
+Growing_Stock_TG_Attribute <- growth_statistics(NG_GS_eval, NR_GS_eval, "Attribute", "TotalGrowth")
+
+# Saving to .csv
+write.csv(Growing_Stock_GR_Atlas, "Growing-Stock_GR-Atlas.csv", row.names = FALSE)
+write.csv(Growing_Stock_GR_Attribute, "Growing-Stock_GR-Attribute.csv", row.names = FALSE)
+write.csv(Growing_Stock_TG_Atlas, "Growing-Stock_TG-Atlas.csv", row.names = FALSE)
+write.csv(Growing_Stock_TG_Attribute, "Growing-Stock_TG-Attribute.csv", row.names = FALSE)
+```
+
+```{r}
+## Above Sawlog Volumes
+# Above Sawlog Net Growth
+NG_AS_eval <- EVALIDator_Cleaning(G_AS, species_to_keep, Growth = TRUE)
+# Above Sawlog Net Removal
+NR_AS_eval <- EVALIDator_Cleaning(NR_AS, species_to_keep, Growth = FALSE)
+
+Above_GR_Atlas <- growth_statistics(NG_AS_eval, NR_AS_eval, "Atlas", "GrowthRemoval")
+
+Above_GR_Attribute <- growth_statistics(NG_AS_eval, NR_AS_eval, "Attribute", "GrowthRemoval")
+
+Above_TG_Atlas <- growth_statistics(NG_AS_eval, NR_AS_eval, "Atlas", "TotalGrowth")
+
+Above_TG_Attribute <- growth_statistics(NG_AS_eval, NR_AS_eval, "Attribute", "TotalGrowth")
+
+# Saving to .csv
+write.csv(Above_GR_Atlas,"Above_GR-Atlas.csv", row.names = FALSE)
+write.csv(Above_GR_Attribute,"Above_GR-Attribute.csv", row.names = FALSE)
+write.csv(Above_TG_Atlas,"Above_TG-Atlas.csv", row.names = FALSE)
+write.csv(Above_TG_Attribute,"Above_TG-Attribute.csv", row.names = FALSE)
+```
+
+```{r}
+## Pulp Volumes
+# Pulp Net Growth
+NG_Pulp <- Log_Sorting_GR(NG_GS_eval,NG_AS_eval,Growth = TRUE, Log_Sort = "Pulp")
+# Pulp Net Removal
+NR_Pulp <- Log_Sorting_GR(NR_GS_eval,NR_AS_eval,Growth = FALSE, Log_Sort = "Pulp")
+
+# Pulp Growth:Removal Atlas Table for QGIS
+Pulp_GR_Atlas <- growth_statistics(NG_Pulp,NR_Pulp, "Atlas", "GrowthRemoval")
+# Pulp Growth:Removal Attribute Table for QGIS
+Pulp_GR_Attribute <- growth_statistics(NG_Pulp,NR_Pulp, "Attribute", "GrowthRemoval")
+# Pulp Total Growth Atlas Table for QGIS
+Pulp_TG_Atlas <- growth_statistics(NG_Pulp,NR_Pulp, "Atlas", "TotalGrowth")
+# Pulp Total Growth Attribute Table for QGIS
+Pulp_TG_Attribute <- growth_statistics(NG_Pulp,NR_Pulp, "Attribute", "TotalGrowth")
+
+# Saving to .csv
+write.csv(Pulp_GR_Atlas, "Pulp_GR_Atlas.csv", row.names = FALSE)
+write.csv(Pulp_GR_Attribute, "Pulp_GR_Attribute.csv", row.names = FALSE)
+write.csv(Pulp_TG_Atlas, "Pulp_TG_Atlas.csv", row.names = FALSE)
+write.csv(Pulp_TG_Attribute, "Pulp_TG_Attribute.csv", row.names = FALSE)
+```
+
+```{r}
+## Bolt Volumes
+# Bolt Net Growth
+NG_Bolt <- Log_Sorting_GR(NG_GS_eval,NG_AS_eval,Growth = TRUE, Log_Sort = "Bolt")
+#Bolt Net Removal
+NR_Bolt <- Log_Sorting_GR(NR_GS_eval,NR_AS_eval,Growth = FALSE, Log_Sort = "Bolt")
+
+# Bolt Growth:Removal Atlas Table for QGIS
+Bolt_GR_Atlas <- growth_statistics(NG_Bolt,NR_Bolt, "Atlas", "GrowthRemoval")
+# Bolt Growth:Removal Attribute Table for QGIS
+Bolt_GR_Attribute <- growth_statistics(NG_Bolt,NR_Bolt, "Attribute", "GrowthRemoval")
+# Bolt Total Growth Atlas Table for QGIS
+Bolt_TG_Atlas <- growth_statistics(NG_Bolt,NR_Bolt, "Atlas", "TotalGrowth")
+# Bolt Total Growth Attribute Table for QGIS
+Bolt_TG_Attribute <- growth_statistics(NG_Bolt,NR_Bolt, "Attribute", "TotalGrowth")
+
+# Saving to .csv
+write.csv(Bolt_GR_Atlas, "Bolt_GR_Atlas.csv", row.names = FALSE)
+write.csv(Bolt_GR_Attribute, "Bolt_GR_Attribute.csv", row.names = FALSE)
+write.csv(Bolt_TG_Atlas, "Bolt_TG_Atlas.csv", row.names = FALSE)
+write.csv(Bolt_TG_Attribute, "Bolt_TG_Attribute.csv", row.names = FALSE)
+```
+
+```{r}
+## Saw Tree Volumes
+# Sawlog Net Growth
+NG_Sawlog_eval <- EVALIDator_Cleaning(NG_Sawlog, species_to_keep, Growth = TRUE)
+# Sawlog Net Removal
+NR_Sawlog_eval <- EVALIDator_Cleaning(NR_Sawlog, species_to_keep, Growth = FALSE)
+
+# Sawlog Growth:Removal Atlas Table for QGIS
+Sawlog_GR_Atlas <- growth_statistics(NG_Sawlog_eval, NR_Sawlog_eval, "Atlas", "GrowthRemoval")
+# Sawlog Growth:Removal Attribute Table for QGIS
+Sawlog_GR_Attribute <- growth_statistics(NG_Sawlog_eval, NR_Sawlog_eval, "Attribute", "GrowthRemoval")
+# Sawlog Total Growth Atlas Table for QGIS
+Sawlog_TG_Atlas <- growth_statistics(NG_Sawlog_eval, NR_Sawlog_eval, "Atlas", "TotalGrowth")
+# Sawlog Total Growth Attribute Table for QGIS
+Sawlog_TG_Attribute <- growth_statistics(NG_Sawlog_eval, NR_Sawlog_eval, "Attribute", "TotalGrowth")
+
+# Saving to .csv
+write.csv(Sawlog_GR_Atlas, "Saw_GR-Atlas.csv", row.names = FALSE)
+write.csv(Sawlog_GR_Attribute, "Saw_GR-Attribute.csv", row.names = FALSE)
+write.csv(Sawlog_TG_Atlas, "Saw_TG-Atlas.csv", row.names = FALSE)
+write.csv(Sawlog_TG_Attribute, "Saw_TG-Attribute.csv", row.names = FALSE)
+```
+
